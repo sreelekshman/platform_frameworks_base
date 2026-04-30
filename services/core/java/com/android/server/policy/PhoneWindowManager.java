@@ -424,6 +424,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private static final String ACTION_TORCH_OFF =
             "com.android.server.policy.PhoneWindowManager.ACTION_TORCH_OFF";
 
+    private static final long MEMORY_RELEASE_INTERVAL_MS = 5 * 60 * 1000L; // 5 minutes
+    private long lastMemoryReleaseTime = 0L;
+
+    private static final long GC_INTERVAL_MS = 5 * 60 * 1000L; // 5 minutes
+    private long lastGcTime = 0L;
+
     /**
      * Keyguard stuff
      */
@@ -6256,6 +6262,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                         + displayGroupId);
             }
         }
+
+        mHandler.removeCallbacks(mMemoryOpt);
     }
 
     // Called on the PowerManager's Notifier thread.
@@ -6298,6 +6306,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         }
         mPowerButtonLaunchGestureTriggeredDuringGoingToSleep = false;
         mPowerButtonLaunchGestureTriggered = false;
+
+        // make sure we do garbage collection at screen off but delay it to avoid black wallpaper
+        mHandler.postDelayed(mSystemServerGcOpt, 5000);
     }
 
     // Called on the PowerManager's Notifier thread.
@@ -6315,6 +6326,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         }
 
         EventLogTags.writeScreenToggled(1);
+
+        mHandler.removeCallbacks(mMemoryOpt);
+        mHandler.postDelayed(mMemoryOpt, 1250 /* allowance time */);
+
+        // remove pending system server gc for frequent screen state changes
+        mHandler.removeCallbacks(mSystemServerGcOpt);
 
         mIsGoingToSleep = false;
         setPendingWakingUpGroup(displayGroupId);
@@ -6359,6 +6376,31 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             mDisplayFoldController.finishedWakingUp();
         }
     }
+
+    private final Runnable mMemoryOpt = new Runnable() {
+        @Override
+        public void run() {
+            releaseMemoryAtScreenOn();
+        }
+    };
+
+    private final Runnable mSystemServerGcOpt = new Runnable() {
+        @Override
+        public void run() {
+            long currentTime = System.currentTimeMillis();
+            if (lastGcTime == 0L || currentTime - lastGcTime > GC_INTERVAL_MS) {
+                System.gc();
+                System.runFinalization();
+                System.gc();
+                try {
+                    mActivityManagerService.compactAllSystem();
+                } catch (RemoteException e) {
+                }
+                lastGcTime = currentTime;
+                Slog.d(TAG, "Performing garbage collection for system_server");
+            }
+        }
+    };
 
     private boolean shouldWakeUpWithHomeIntent() {
         if (mWakeUpToLastStateTimeout <= 0) {
@@ -7962,6 +8004,18 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             case AudioManager.RINGER_MODE_SILENT:
                 am.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
                 break;
+        }
+    }
+
+    private void releaseMemoryAtScreenOn() {
+        long currentTime = System.currentTimeMillis();
+        if (lastMemoryReleaseTime == 0L || currentTime - lastMemoryReleaseTime > MEMORY_RELEASE_INTERVAL_MS) {
+            try {
+                mActivityManagerService.releaseMemory(900, 25, false, false);
+                lastMemoryReleaseTime = currentTime;
+                Slog.d(TAG, "Performing screen-on memory reclaim.");
+            } catch (RemoteException e) {
+            }
         }
     }
 }

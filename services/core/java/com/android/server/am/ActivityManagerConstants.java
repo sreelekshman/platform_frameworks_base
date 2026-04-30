@@ -185,7 +185,7 @@ final class ActivityManagerConstants extends ContentObserver {
      */
     static final String KEY_FREEZER_CUTOFF_ADJ = "freezer_cutoff_adj";
 
-    private static final int DEFAULT_MAX_CACHED_PROCESSES = 1024;
+    private static final int DEFAULT_MAX_CACHED_PROCESSES = 128;
     private static final boolean DEFAULT_PRIORITIZE_ALARM_BROADCASTS = true;
     private static final long DEFAULT_FGSERVICE_MIN_SHOWN_TIME = 2*1000;
     private static final long DEFAULT_FGSERVICE_MIN_REPORT_TIME = 3*1000;
@@ -916,7 +916,7 @@ final class ActivityManagerConstants extends ContentObserver {
 
     /** @see #mNoKillCachedProcessesPostBootCompletedDurationMillis */
     private static final long
-            DEFAULT_NO_KILL_CACHED_PROCESSES_POST_BOOT_COMPLETED_DURATION_MILLIS = 600_000;
+            DEFAULT_NO_KILL_CACHED_PROCESSES_POST_BOOT_COMPLETED_DURATION_MILLIS = 120_000;
 
     /**
      * If true, do not kill excessive cached processes proactively, until user-0 is unlocked.
@@ -947,7 +947,7 @@ final class ActivityManagerConstants extends ContentObserver {
     private static final String KEY_MAX_EMPTY_TIME_MILLIS =
             "max_empty_time_millis";
 
-    private static final long DEFAULT_MAX_EMPTY_TIME_MILLIS = 1000L * 60L * 60L * 1000L;
+    private static final long DEFAULT_MAX_EMPTY_TIME_MILLIS = 30L * 60L * 1000L;
 
     volatile long mMaxEmptyTimeMillis = DEFAULT_MAX_EMPTY_TIME_MILLIS;
 
@@ -1479,14 +1479,12 @@ final class ActivityManagerConstants extends ContentObserver {
                 .map(ComponentName::unflattenFromString).collect(Collectors.toSet()));
         mCustomizedMaxCachedProcesses = context.getResources().getInteger(
                 com.android.internal.R.integer.config_customizedMaxCachedProcesses);
-        CUR_MAX_CACHED_PROCESSES = mCustomizedMaxCachedProcesses;
+        CUR_MAX_CACHED_PROCESSES = Integer.min(mCustomizedMaxCachedProcesses, MAX_CACHED_PROCESSES);
         CUR_MAX_EMPTY_PROCESSES = computeEmptyProcessLimit(CUR_MAX_CACHED_PROCESSES);
 
-        final int rawMaxEmptyProcesses = computeEmptyProcessLimit(
-                Integer.min(CUR_MAX_CACHED_PROCESSES, MAX_CACHED_PROCESSES));
+        final int rawMaxEmptyProcesses = computeEmptyProcessLimit(CUR_MAX_CACHED_PROCESSES);
         CUR_TRIM_EMPTY_PROCESSES = rawMaxEmptyProcesses / 2;
-        CUR_TRIM_CACHED_PROCESSES = (Integer.min(CUR_MAX_CACHED_PROCESSES, MAX_CACHED_PROCESSES)
-                    - rawMaxEmptyProcesses) / 3;
+        CUR_TRIM_CACHED_PROCESSES = (CUR_MAX_CACHED_PROCESSES - rawMaxEmptyProcesses) / 3;
         loadNativeBootDeviceConfigConstants();
         mDefaultDisableAppProfilerPssProfiling = context.getResources().getBoolean(
                 R.bool.config_am_disablePssProfiling);
@@ -2073,13 +2071,13 @@ final class ActivityManagerConstants extends ContentObserver {
                     "Unable to parse flag for max_cached_processes: " + maxCachedProcessesFlag, e);
             CUR_MAX_CACHED_PROCESSES = mCustomizedMaxCachedProcesses;
         }
+        CUR_MAX_CACHED_PROCESSES = Integer.min(CUR_MAX_CACHED_PROCESSES, MAX_CACHED_PROCESSES);
+
         CUR_MAX_EMPTY_PROCESSES = computeEmptyProcessLimit(CUR_MAX_CACHED_PROCESSES);
 
-        final int rawMaxEmptyProcesses = computeEmptyProcessLimit(
-                Integer.min(CUR_MAX_CACHED_PROCESSES, MAX_CACHED_PROCESSES));
+        final int rawMaxEmptyProcesses = computeEmptyProcessLimit(CUR_MAX_CACHED_PROCESSES);
         CUR_TRIM_EMPTY_PROCESSES = rawMaxEmptyProcesses / 2;
-        CUR_TRIM_CACHED_PROCESSES = (Integer.min(CUR_MAX_CACHED_PROCESSES, MAX_CACHED_PROCESSES)
-                    - rawMaxEmptyProcesses) / 3;
+        CUR_TRIM_CACHED_PROCESSES = (CUR_MAX_CACHED_PROCESSES - rawMaxEmptyProcesses) / 3;
     }
 
     private void updateProactiveKillsEnabled() {

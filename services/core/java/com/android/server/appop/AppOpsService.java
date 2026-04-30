@@ -139,6 +139,7 @@ import android.os.UserHandle;
 import android.permission.PermissionManager;
 import android.permission.flags.Flags;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.AtomicFile;
@@ -5091,7 +5092,7 @@ public class AppOpsService extends IAppOpsService.Stub {
             Binder.restoreCallingIdentity(ident);
         }
 
-        if (pkgUid != uid) {
+        if (pkgUid != Process.INVALID_UID && pkgUid != uid) {
             if (!suppressErrorLogs) {
                 Slog.e(TAG, "Bad call made by uid " + callingUid + ". "
                         + "Package \"" + packageName + "\" does not belong to uid " + uid + ".");
@@ -5125,7 +5126,7 @@ public class AppOpsService extends IAppOpsService.Stub {
             @Nullable String attributionTag) {
         if (pkg == null) {
             return false;
-        } else if (attributionTag == null) {
+        } else if (TextUtils.isEmpty(attributionTag)) {
             return true;
         }
         if (pkg.getAttributions() != null) {
@@ -5571,15 +5572,16 @@ public class AppOpsService extends IAppOpsService.Stub {
                     String lastPkg = null;
                     for (int i=0; i<allOps.size(); i++) {
                         AppOpsManager.PackageOps pkg = allOps.get(i);
-                        if (!Objects.equals(pkg.getPackageName(), lastPkg)) {
+                        if (pkg.getPackageName() == null) {
+                            continue;
+                        }
+                        if (!pkg.getPackageName().equals(lastPkg)) {
                             if (lastPkg != null) {
                                 out.endTag(null, "pkg");
                             }
                             lastPkg = pkg.getPackageName();
-                            if (lastPkg != null) {
-                                out.startTag(null, "pkg");
-                                out.attribute(null, "n", lastPkg);
-                            }
+                            out.startTag(null, "pkg");
+                            out.attribute(null, "n", lastPkg);
                         }
                         out.startTag(null, "uid");
                         out.attributeInt(null, "n", pkg.getUid());

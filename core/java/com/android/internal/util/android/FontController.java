@@ -107,7 +107,16 @@ public class FontController {
         WEIGHT_MAP.put("variable-body-small", 400);
     }
 
-    public static FontController get() {
+    private static final Map<String, String> FONT_FEATURE_MAP = new ArrayMap<>();
+    static {
+        FONT_FEATURE_MAP.put("inter", "'ss01'");
+    }
+
+    public static String getFontFeatureSettings() {
+        return FONT_FEATURE_MAP.getOrDefault(get().getCurrentFont(), null);
+    }
+
+    public static synchronized FontController get() {
         if (sInstance == null) {
             sInstance = new FontController();
         }
@@ -164,6 +173,21 @@ public class FontController {
         if (fontToOverride.matches("^" + Pattern.quote(currentFont) + "(-.*)?$")) {
             logger(fontToOverride + " matches current font root '" + currentFont + "', skipping override!");
             return null;
+        }
+
+        if (fontToOverride.startsWith("variable-")) {
+            if (!isSysPkg) {
+                logger("Skipping variable family override for non-system pkg: " + fontToOverride);
+                return null;
+            }
+            int weight = TypefaceFactory.resolveWeightByName(fontToOverride);
+            int fontWeightAdjustment = getFontWeightAdjustment(); // ← ADD THIS LINE
+            if (fontWeightAdjustment != 0) {
+                weight = Math.min(1000, Math.max(100, weight + fontWeightAdjustment));
+            }
+            boolean isItalic = fontToOverride.contains("italic");
+            Typeface base = Typeface.getSystemDefaultTypeface(getCurrentFont());
+            return Typeface.create(base, weight, isItalic);
         }
 
         boolean override = OVERRIDE_FONTS.stream().anyMatch(fontToOverride::contains) 
@@ -248,12 +272,17 @@ public class FontController {
             if (exactMatch != null) {
                 return exactMatch;
             }
+            String bestKey = null;
+            int bestWeight = 400;
             for (Map.Entry<String, Integer> entry : WEIGHT_MAP.entrySet()) {
                 if (familyName.contains(entry.getKey())) {
-                    return entry.getValue();
+                    if (bestKey == null || entry.getKey().length() > bestKey.length()) {
+                        bestKey = entry.getKey();
+                        bestWeight = entry.getValue();
+                    }
                 }
             }
-            return 400;
+            return bestWeight;
         }
     }
 }

@@ -1559,6 +1559,8 @@ public final class StrictMode {
         if (targetSdkVersion >= Build.VERSION_CODES.N) {
             builder.detectFileUriExposure();
             builder.penaltyDeathOnFileUriExposure();
+            builder.detectActivityLeaks();
+            builder.detectLeakedRegistrationObjects();
         }
 
         if (Build.IS_USER || DISABLE || SystemProperties.getBoolean(DISABLE_PROPERTY, false)) {
@@ -2226,12 +2228,18 @@ public final class StrictMode {
         }
     }
 
+    private static volatile BackgroundActivityLaunchCallback sBackgroundActivityLaunchCallback;
+
     private static void registerBackgroundActivityLaunchCallback() {
+        if (sBackgroundActivityLaunchCallback != null) {
+            return;
+        }
+        sBackgroundActivityLaunchCallback = new BackgroundActivityLaunchCallback();
         try {
             IActivityTaskManager service = ActivityTaskManager.getService();
             if (service != null) {
                 service.registerBackgroundActivityStartCallback(
-                    new BackgroundActivityLaunchCallback());
+                    sBackgroundActivityLaunchCallback);
             }
         } catch (DeadObjectException e) {
             // ignore
@@ -2663,7 +2671,9 @@ public final class StrictMode {
 
     /** @hide */
     public static void onVmPolicyViolation(Violation originStack) {
-        onVmPolicyViolation(originStack, false);
+        boolean forceDeath = originStack instanceof IntentReceiverLeakedViolation 
+            || originStack instanceof ServiceConnectionLeakedViolation;
+        onVmPolicyViolation(originStack, forceDeath);
     }
 
     /** @hide */

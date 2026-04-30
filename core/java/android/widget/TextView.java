@@ -249,6 +249,7 @@ import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.FastMath;
 import com.android.internal.util.Preconditions;
+import com.android.internal.util.android.FontController;
 import com.android.text.flags.Flags;
 
 import libcore.util.EmptyArray;
@@ -874,6 +875,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
     private int mFontWeightAdjustment;
     private Typeface mOriginalTypeface;
     private String mFontFamily;
+    private String mOriginalFontFamily;
 
     // True if setKeyListener() has been explicitly called
     private boolean mListenerChanged = false;
@@ -4390,6 +4392,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                     if (attributes.mTypefaceIndex != -1 && !attributes.mFontFamilyExplicit) {
                         attributes.mFontFamily = null;
                         mFontFamily = null;
+                        mOriginalFontFamily = null;
                     }
                     break;
                 case com.android.internal.R.styleable.TextAppearance_fontFamily:
@@ -4403,6 +4406,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                     if (attributes.mFontTypeface == null) {
                         attributes.mFontFamily = appearance.getString(attr);
                         mFontFamily = attributes.mFontFamily;
+                        mOriginalFontFamily = attributes.mFontFamily;
                     }
                     attributes.mFontFamilyExplicit = true;
                     break;
@@ -4499,6 +4503,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         if (attributes.mTypefaceIndex != -1 && !attributes.mFontFamilyExplicit) {
             attributes.mFontFamily = null;
             mFontFamily = null;
+            mOriginalFontFamily = null;
         }
         setTypefaceFromAttrs(attributes.mFontTypeface, attributes.mFontFamily,
                 attributes.mTypefaceIndex, attributes.mTextStyle, attributes.mFontWeight);
@@ -4532,8 +4537,9 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
             setFontVariationSettings(attributes.mFontVariationSettings);
         }
 
-        if (Typeface.getFontName().equals("inter")) {
-            setFontFeatureSettings("'ss01'");
+        String fontFeatures = FontController.getFontFeatureSettings();
+        if (fontFeatures != null) {
+            setFontFeatureSettings(fontFeatures);
         }
 
         if (attributes.mHasLineBreakStyle || attributes.mHasLineBreakWordStyle) {
@@ -4679,7 +4685,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         }
 
         if (!TextUtils.equals(mFontFamily, Typeface.getFontName())) {
-            Typeface tf = Typeface.getOverrideTypeface(mFontFamily);
+            Typeface tf = Typeface.getOverrideTypeface(mOriginalFontFamily);
             setTypeface(tf);
             mFontFamily = Typeface.getFontName();
         }

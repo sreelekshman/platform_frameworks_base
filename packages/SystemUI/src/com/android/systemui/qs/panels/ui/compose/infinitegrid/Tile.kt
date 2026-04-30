@@ -28,6 +28,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -57,9 +58,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
@@ -118,6 +122,7 @@ val LocalQSTileQqsRows = compositionLocalOf { 2 }
 val LocalQSTileQsRows = compositionLocalOf { 4 }
 val LocalQSTileShape = compositionLocalOf { 0 }
 val LocalQSTileOpacity = compositionLocalOf { 100 }
+val LocalQSTileAnimationStyle = compositionLocalOf { 0 }
 
 @Composable
 private fun rememberSecureIntSetting(key: String, defaultValue: Int = 0): Int {
@@ -179,6 +184,9 @@ fun rememberQSTileShape(): Int = rememberSecureIntSetting("qs_tile_shape")
 
 @Composable
 fun rememberQSTileOpacity(): Int = rememberSecureIntSetting("qs_tile_opacity", 100).coerceIn(0, 100)
+
+@Composable
+fun rememberQSTileAnimationStyle(): Int = rememberSecureIntSetting("qs_tile_animation_style")
 
 @Composable
 fun TileLazyGrid(
@@ -261,7 +269,21 @@ fun ContentScope.Tile(
                 tile.state.collect { value = it.toIconProvider() }
             }
 
-        val colors = TileDefaults.getColorForState(uiState, iconOnly)
+        val panelStyle = LocalQSPanelStyle.current
+        val tileAnimationStyle = LocalQSTileAnimationStyle.current
+        val density = LocalDensity.current
+
+        val baseColors = TileDefaults.getColorForState(uiState, iconOnly)
+        val colors = when (panelStyle) {
+            2, 3 -> if (uiState.state == STATE_ACTIVE) {
+                baseColors.copy(
+                    icon = MaterialTheme.colorScheme.onSurface,
+                    label = MaterialTheme.colorScheme.onSurface,
+                    secondaryLabel = MaterialTheme.colorScheme.onSurface,
+                )
+            } else baseColors
+            else -> baseColors
+        }
         val hapticsViewModel: TileHapticsViewModel? =
             rememberViewModel(traceName = "TileHapticsViewModel") {
                 tileHapticsViewModelFactoryProvider.getHapticsViewModelFactory()?.create(tile)
@@ -286,9 +308,63 @@ fun ContentScope.Tile(
             contentRevealModifier = Modifier
         }
 
-        val isClassicStyle = LocalQSPanelStyle.current == 1
-        val effectiveColor = if (isClassicStyle) Color.Transparent else animatedColor
-        val effectiveShape = if (isClassicStyle) RoundedCornerShape(0.dp) else tileShape
+        val effectiveColor: Color
+        val effectiveShape: Shape
+        val styleModifier: Modifier
+
+        when (panelStyle) {
+            1 -> {
+                effectiveColor = Color.Transparent
+                effectiveShape = RoundedCornerShape(0.dp)
+                styleModifier = Modifier
+            }
+            2 -> {
+                effectiveColor = Color.Transparent
+                effectiveShape = tileShape
+                styleModifier = Modifier.border(2.dp, animatedColor, tileShape)
+            }
+            3 -> {
+                effectiveColor = Color.Transparent
+                effectiveShape = tileShape
+                val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                val isActive = uiState.state == STATE_ACTIVE
+                val shadowOffset = with(density) { 3.dp.toPx() }
+                val cornerRadius = with(density) { 24.dp.toPx() }
+                styleModifier = Modifier.drawBehind {
+                    val cr = CornerRadius(cornerRadius, cornerRadius)
+                    drawRoundRect(color = surfaceColor, cornerRadius = cr)
+                    for (i in 1..3) {
+                        val offset = shadowOffset * i / 3f
+                        val lightOff = if (isActive) offset else -offset
+                        val darkOff = if (isActive) -offset else offset
+                        translate(left = lightOff, top = lightOff) {
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.25f / i),
+                                cornerRadius = cr,
+                            )
+                        }
+                        translate(left = darkOff, top = darkOff) {
+                            drawRoundRect(
+                                color = Color.Black.copy(alpha = 0.08f / i),
+                                cornerRadius = cr,
+                            )
+                        }
+                    }
+                    drawRoundRect(color = surfaceColor, cornerRadius = cr)
+                }
+            }
+            4 -> {
+                effectiveColor = animatedColor
+                effectiveShape = CyberPunkTileShape
+                val accentColor = MaterialTheme.colorScheme.tertiary
+                styleModifier = Modifier.border(1.5.dp, accentColor, CyberPunkTileShape)
+            }
+            else -> {
+                effectiveColor = animatedColor
+                effectiveShape = tileShape
+                styleModifier = Modifier
+            }
+        }
 
         TileExpandable(
             color = { effectiveColor },
@@ -300,6 +376,8 @@ fun ContentScope.Tile(
                     .then(surfaceRevealModifier)
                     .borderOnFocus(color = MaterialTheme.colorScheme.secondary, tileShape.topEnd)
                     .fillMaxWidth()
+                    .then(styleModifier)
+                    .tileToggleAnimation(uiState.state, tileAnimationStyle)
                     .thenIf(currentBounceableInfo != null) {
                         Modifier.bounceable(
                             currentBounceableInfo!!.bounceable,
@@ -489,12 +567,76 @@ fun LargeStaticTile(
     iconProvider: IconProvider,
     modifier: Modifier = Modifier,
 ) {
-    val colors = TileDefaults.getColorForState(uiState = uiState, iconOnly = false)
+    val baseColors = TileDefaults.getColorForState(uiState = uiState, iconOnly = false)
+    val panelStyle = LocalQSPanelStyle.current
+    val colors = when (panelStyle) {
+        2, 3 -> if (uiState.state == STATE_ACTIVE) {
+            baseColors.copy(
+                icon = MaterialTheme.colorScheme.onSurface,
+                label = MaterialTheme.colorScheme.onSurface,
+                secondaryLabel = MaterialTheme.colorScheme.onSurface,
+            )
+        } else baseColors
+        else -> baseColors
+    }
+    val tileShape = TileDefaults.animateTileShapeAsState(state = uiState.state).value
+    val density = LocalDensity.current
+
+    val bgColor: Color
+    val clipShape: Shape
+    val extraModifier: Modifier
+
+    when (panelStyle) {
+        2 -> {
+            bgColor = Color.Transparent
+            clipShape = tileShape
+            extraModifier = Modifier.border(2.dp, colors.background, tileShape)
+        }
+        3 -> {
+            bgColor = Color.Transparent
+            clipShape = tileShape
+            val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            val shadowOffset = with(density) { 3.dp.toPx() }
+            val cornerRadius = with(density) { 24.dp.toPx() }
+            extraModifier = Modifier.drawBehind {
+                val cr = CornerRadius(cornerRadius, cornerRadius)
+                drawRoundRect(color = surfaceColor, cornerRadius = cr)
+                for (i in 1..3) {
+                    val offset = shadowOffset * i / 3f
+                    translate(left = -offset, top = -offset) {
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.25f / i),
+                            cornerRadius = cr,
+                        )
+                    }
+                    translate(left = offset, top = offset) {
+                        drawRoundRect(
+                            color = Color.Black.copy(alpha = 0.08f / i),
+                            cornerRadius = cr,
+                        )
+                    }
+                }
+                drawRoundRect(color = surfaceColor, cornerRadius = cr)
+            }
+        }
+        4 -> {
+            bgColor = colors.background
+            clipShape = CyberPunkTileShape
+            val accentColor = MaterialTheme.colorScheme.tertiary
+            extraModifier = Modifier.border(1.5.dp, accentColor, CyberPunkTileShape)
+        }
+        else -> {
+            bgColor = colors.background
+            clipShape = tileShape
+            extraModifier = Modifier
+        }
+    }
 
     Box(
         modifier
-            .clip(TileDefaults.animateTileShapeAsState(state = uiState.state).value)
-            .background(colors.background)
+            .then(extraModifier)
+            .clip(clipShape)
+            .background(bgColor)
             .height(TileHeight)
             .largeTilePadding()
     ) {

@@ -7133,6 +7133,19 @@ public final class Settings {
         public static final String LOCK_GESTURE_STATUS = "lock_gesture_status";
 
         /**
+         * Heads-up notification auto-dismiss timeout in milliseconds
+         * @hide
+         */
+        public static final String HEADS_UP_TIMEOUT = "heads_up_timeout";
+
+        /**
+         * Charging animation style
+         * 0 = None, 1 = Ripple, 2 = Flash, 3 = Glow Pulse, 4 = Battery Fill
+         * @hide
+         */
+        public static final String CHARGING_ANIMATION_STYLE = "charging_animation_style";
+
+        /**
          * Keys we no longer back up under the current schema, but want to continue to
          * process when restoring historical backup datasets.
          *
