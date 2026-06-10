@@ -797,6 +797,9 @@ public class WindowManagerService extends IWindowManager.Stub
     WindowManagerInternal.OnHardKeyboardStatusChangeListener mHardKeyboardStatusChangeListener;
     WindowManagerInternal.OnImeRequestedChangedListener mOnImeRequestedChangedListener;
 
+    private ArraySet<WindowManagerInternal.DisplaySecureContentListener>
+            mDisplaySecureContentListeners = new ArraySet<>();
+
     SettingsObserver mSettingsObserver;
     final EmbeddedWindowController mEmbeddedWindowController;
     final AnrController mAnrController;
@@ -1886,6 +1889,12 @@ public class WindowManagerService extends IWindowManager.Stub
                 if (!displayContent.canAddToastWindowForUid(callingUid)) {
                     ProtoLog.w(WM_ERROR, "Adding more than one toast window for UID at a time.");
                     return WindowManagerGlobal.ADD_DUPLICATE_ADD;
+                }
+                // Because a WindowToken of TYPE_TOAST only allows one toast window, block the
+                // addition of any other toast window to this token.
+                if (addToastWindowRequiresToken && !token.isEmpty()) {
+                    ProtoLog.w(WM_ERROR, "Adding toast window with non-empty token.");
+                    return WindowManagerGlobal.ADD_BAD_APP_TOKEN;
                 }
                 // Make sure this happens before we moved focus as one can make the
                 // toast focusable to force it not being hidden after the timeout.
@@ -5833,6 +5842,15 @@ public class WindowManagerService extends IWindowManager.Stub
         }
     }
 
+    void notifyDisplaySecureContentChange(int displayId, boolean hasSecureWindowOnScreen) {
+        synchronized (mGlobalLock) {
+            mDisplaySecureContentListeners.forEach((listener) -> {
+                listener.onDisplayHasSecureWindowOnScreenChanged(
+                        displayId, hasSecureWindowOnScreen);
+            });
+        }
+    }
+
     // -------------------------------------------------------------
     // Input Events and Focus Management
     // -------------------------------------------------------------
@@ -8925,6 +8943,22 @@ public class WindowManagerService extends IWindowManager.Stub
        }
 
         @Override
+        public boolean isImeInputTargetStaleForUpdate(IBinder windowToken) {
+            synchronized (mGlobalLock) {
+                InputTarget target = getInputTargetFromWindowTokenLocked(windowToken);
+                if (target != null && target.getDisplayContent() != null
+                        && target.getDisplayContent().getImeInputTarget() != null
+                        && target.getDisplayContent().getImeInputTarget() != target) {
+                    WindowState ws = target.getDisplayContent().getImeInputTarget().getWindowState();
+                    if (ws != null && (ws.mRemoved || ws.mDestroying)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        @Override
         public void addTrustedTaskOverlay(int taskId,
                 SurfaceControlViewHost.SurfacePackage overlay) {
             if (overlay == null) {
@@ -9233,6 +9267,20 @@ public class WindowManagerService extends IWindowManager.Stub
                 }
             }
             WindowManagerService.this.requestAssistScreenshotInternal(receiver, displayId);
+        }
+
+        @Override
+        public void registerDisplaySecureContentListener(DisplaySecureContentListener listener) {
+            synchronized (mGlobalLock) {
+                mDisplaySecureContentListeners.add(listener);
+            }
+        }
+
+        @Override
+        public void unregisterDisplaySecureContentListener(DisplaySecureContentListener listener) {
+            synchronized (mGlobalLock) {
+                mDisplaySecureContentListeners.remove(listener);
+            }
         }
     }
 
